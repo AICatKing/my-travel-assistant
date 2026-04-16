@@ -10,6 +10,9 @@ RUN uv sync --frozen --no-install-project --no-dev
 # --- 第二阶段: 运行时环境 ---
 FROM python:3.11-slim
 
+# 安装 curl 用于 Railway 健康检查
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY src /app/src
@@ -19,8 +22,9 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH="/app/src"
 
+# 暴露端口 (虽然 Railway 会覆盖它，但保留声明是好习惯)
 EXPOSE 8000
 
-# 运行命令：直接从 src 目录下启动，简化导入路径
+# 运行命令：使用 shell 模式以支持 $PORT 变量解析
 WORKDIR /app/src
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000}

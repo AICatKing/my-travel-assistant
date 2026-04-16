@@ -112,4 +112,6 @@ async def create_trip_plan_stream(request: TripPlanRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # 优先使用 Railway 提供的 PORT 变量，默认为 8000
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
