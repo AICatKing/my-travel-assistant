@@ -24,6 +24,7 @@ export interface Hotel {
   distance: string;
   type: string;
   estimated_cost: number;
+  image_url?: string;
 }
 
 export interface WeatherInfo {

@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  # 后端 API 服务
+  backend:
+    build: .
+    container_name: travel-assistant-backend
+    volumes:
+      - ./checkpoints.db:/app/checkpoints.db
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app/src
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 前端 UI 服务 (通过 Nginx 托管)
+  frontend:
+    build: 
+      context: ./web
+    container_name: travel-assistant-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+networks:
+  default:
+    name: travel-assistant-network

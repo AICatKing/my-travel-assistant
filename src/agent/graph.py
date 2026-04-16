@@ -1,6 +1,7 @@
 """智能旅行助手 Graph 核心逻辑 - 异步优化版。
 
-修复了 LangGraph Studio 中 requests 导致的 Blocking call 报错。
+修复了 LangGraph 异步环境下的持久化冲突问题。
+使用 MemorySaver 以支持异步流式输出。
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import PydanticOutputParser
 from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.runtime import Runtime
 from typing_extensions import TypedDict
 
@@ -65,32 +67,25 @@ llm = ChatOpenAI(
 
 parser = PydanticOutputParser(pydantic_object=TripPlan)
 
-# --- 节点函数 (使用 asyncio.to_thread) ---
+# --- 节点函数 ---
 
 async def search_attractions_node(state: AgentState, runtime: Runtime[Context]) -> Dict[str, Any]:
     print("\n>>>> [Node] 进入 search_attractions_node")
     city = state.get('city', "北京")
     prefs = state.get('preferences', "历史文化")
     
-    # 1. AI 建议关键词
     prompt = f"针对{city}的{prefs}旅行偏好，请给出1个最核心的景点搜索关键词。仅返回关键词。"
     res = await llm.ainvoke(prompt)
     keywords = res.content.strip().replace("。", "").replace(".", "")
-    print(f">>>> [Debug] AI 建议关键词: {keywords}")
     
-    # 2. 调用高德 (通过 to_thread 解决阻塞问题)
     pois = await asyncio.to_thread(search_amap_poi, keywords, city, "050000")
-    print(f">>>> [Debug] 高德返回 POI 数量: {len(pois)}")
-    
     attractions = [parse_poi_to_attraction(p) for p in pois]
 
-    # 3. 并行获取图片 (UA-B4 优化)
     async def fetch_img(attr: Attraction):
         img_url = await asyncio.to_thread(search_unsplash_image, f"{city} {attr.name}")
         attr.image_url = img_url
 
     if attractions:
-        print(f">>>> [Debug] 正在并行获取 {len(attractions)} 个景点的图片...")
         await asyncio.gather(*(fetch_img(a) for a in attractions))
 
     return {"attractions": attractions}
@@ -101,19 +96,14 @@ async def search_hotels_node(state: AgentState, runtime: Runtime[Context]) -> Di
     city = state.get('city', "北京")
     acc = state.get('accommodation', "高档酒店")
     
-    # 通过 to_thread 运行同步函数
     pois = await asyncio.to_thread(search_amap_poi, acc, city, "住宿服务")
-    print(f">>>> [Debug] 高德返回酒店数量: {len(pois)}")
-    
     hotels = [parse_poi_to_hotel(p) for p in pois]
 
-    # 3. 并行获取图片
     async def fetch_hotel_img(h: Hotel):
         img_url = await asyncio.to_thread(search_unsplash_image, f"{city} {h.name}")
         h.image_url = img_url
 
     if hotels:
-        print(f">>>> [Debug] 正在并行获取 {len(hotels)} 个酒店的图片...")
         await asyncio.gather(*(fetch_hotel_img(h) for h in hotels))
 
     return {"hotels": hotels}
@@ -122,10 +112,7 @@ async def search_hotels_node(state: AgentState, runtime: Runtime[Context]) -> Di
 async def query_weather_node(state: AgentState, runtime: Runtime[Context]) -> Dict[str, Any]:
     print("\n>>>> [Node] 进入 query_weather_node")
     city = state.get('city', "北京")
-    
-    # 通过 to_thread 运行同步函数
     weather = await asyncio.to_thread(get_amap_weather, city)
-    print(f">>>> [Debug] 获取天气天数: {len(weather)}")
     return {"weather": weather}
 
 
@@ -133,7 +120,6 @@ async def planner_node(state: AgentState, runtime: Runtime[Context]) -> Dict[str
     print("\n>>>> [Node] 进入 planner_node")
     
     if not state.get('attractions'):
-        print(">>>> [Error] Planner 发现景点列表为空！")
         return {"errors": ["未能搜寻到相关景点，请检查城市名"]}
 
     prompt = f"""你是一位专业的旅行规划专家。
@@ -153,10 +139,8 @@ async def planner_node(state: AgentState, runtime: Runtime[Context]) -> Dict[str
         if content.endswith("```"): content = content[:-3]
         
         final_plan = parser.parse(content)
-        print(">>>> [Success] 计划生成成功！")
         return {"final_plan": final_plan}
     except Exception as e:
-        print(f">>>> [Error] AI 生成失败: {e}")
         return {"errors": [str(e)]}
 
 # --- 构建 Graph ---
@@ -175,4 +159,10 @@ workflow.add_edge("search_hotels", "planner")
 workflow.add_edge("query_weather", "planner")
 workflow.add_edge("planner", END)
 
-graph = workflow.compile(name="Real Data Travel Assistant")
+# 使用 MemorySaver：内存级存储，原生支持 async 环境且无需配置
+memory = MemorySaver()
+
+graph = workflow.compile(
+    checkpointer=memory,
+    name="Real Data Travel Assistant"
+)

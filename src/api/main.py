@@ -1,7 +1,11 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 import time
-from typing import Any, Dict
+import json
+import asyncio
+import uuid
+from typing import Any, Dict, AsyncGenerator
 
 # 导入 Agent 核心组件
 from agent.graph import graph
@@ -13,7 +17,15 @@ app = FastAPI(
     version="0.1.0"
 )
 
-# 配置 CORS 允许前端跨域访问 (P0 阶段允许所有源)
+# 状态映射表
+NODE_STATUS_MAP = {
+    "search_attractions": "🗺️ 正在搜寻目的地热门景点并抓取精美图片...",
+    "search_hotels": "🏨 正在为您筛选优质酒店住宿...",
+    "query_weather": "🌤️ 正在查询目的地未来天气预报...",
+    "planner": "📝 正在为您精心规划每一天的行程细节..."
+}
+
+# 配置 CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,7 +36,6 @@ app.add_middleware(
 
 @app.get("/")
 async def health_check():
-    """基础健康检查，确认 API 存活"""
     return {
         "status": "online",
         "timestamp": int(time.time()),
@@ -33,12 +44,7 @@ async def health_check():
 
 @app.post("/api/plan", response_model=TripPlan)
 async def create_trip_plan(request: TripPlanRequest):
-    """
-    接收用户偏好请求，运行 LangGraph Agent 逻辑并返回最终生成的旅行计划。
-    """
-    print(f"\n>>>> [API Request] 收到旅行计划请求: {request.city} ({request.days}天)")
-    
-    # 构造 Agent 初始状态
+    print(f"\n>>>> [API Request] 收到同步规划请求: {request.city}")
     initial_state = {
         "city": request.city,
         "start_date": request.start_date,
@@ -54,30 +60,80 @@ async def create_trip_plan(request: TripPlanRequest):
         "final_plan": None,
         "errors": []
     }
-    
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
     try:
-        # 运行异步图逻辑
-        # 注：ainvoke 是异步调用
-        result = await graph.ainvoke(initial_state)
-        
-        # 检查是否有错误返回
+        result = await graph.ainvoke(initial_state, config=config)
         if result.get("errors"):
-            print(f">>>> [API Error] Agent 返回错误: {result['errors']}")
             raise HTTPException(status_code=500, detail=result["errors"][0])
-        
-        final_plan = result.get("final_plan")
-        if not final_plan:
-            print(">>>> [API Error] Agent 未能生成最终计划。")
-            raise HTTPException(status_code=500, detail="Failed to generate a trip plan.")
-            
-        print(f">>>> [API Success] 旅行计划生成成功！")
-        return final_plan
-        
+        return result["final_plan"]
     except Exception as e:
-        print(f">>>> [API Exception] 发生意外错误: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/plan/stream")
+async def create_trip_plan_stream(request: TripPlanRequest):
+    """
+    通过 SSE 流式返回进度。
+    """
+    request_id = str(uuid.uuid4())
+    config = {"configurable": {"thread_id": request_id}}
+    
+    async def event_generator() -> AsyncGenerator[str, None]:
+        initial_state = {
+            "city": request.city,
+            "start_date": request.start_date,
+            "end_date": request.end_date,
+            "days": request.days,
+            "preferences": request.preferences,
+            "budget": request.budget,
+            "transportation": request.transportation,
+            "accommodation": request.accommodation,
+            "attractions": [],
+            "hotels": [],
+            "weather": [],
+            "final_plan": None,
+            "errors": []
+        }
+
+        try:
+            # 1. 运行 astream，监听 updates 模式（节点完成通知）
+            async for chunk in graph.astream(initial_state, config=config, stream_mode="updates"):
+                node_name = list(chunk.keys())[0]
+                status_msg = NODE_STATUS_MAP.get(node_name)
+                if status_msg:
+                    # 关键：发送当前节点状态
+                    yield f"data: {json.dumps({'type': 'status', 'content': status_msg}, ensure_ascii=False)}\n\n"
+                    # 给前端一个小延迟，让 UI 动效平滑
+                    await asyncio.sleep(0.5)
+
+            # 2. 节点运行全部结束后，获取最终合并后的 State
+            # 在 MemorySaver 模式下，None 作为输入会恢复最新状态
+            print(f">>>> [API] Agent 节点全部完成，获取最终计划 (ID: {request_id})...")
+            final_state = await graph.ainvoke(None, config=config)
+            
+            if final_state.get("errors"):
+                yield f"data: {json.dumps({'type': 'error', 'content': final_state['errors'][0]}, ensure_ascii=False)}\n\n"
+            else:
+                final_plan = final_state.get("final_plan")
+                if final_plan:
+                    # 输出最终 JSON
+                    yield f"data: {json.dumps({'type': 'final', 'content': final_plan.dict()}, ensure_ascii=False)}\n\n"
+                else:
+                    yield f"data: {json.dumps({'type': 'error', 'content': '未能生成计划数据'})}\n\n"
+
+        except Exception as e:
+            print(f">>>> [API Error] 流式处理崩溃: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(), 
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no" # 禁用 Nginx 缓冲
+        }
+    )
 
 if __name__ == "__main__":
     import uvicorn
-    # 这里用于本地直接 python 运行调试
     uvicorn.run(app, host="0.0.0.0", port=8000)
