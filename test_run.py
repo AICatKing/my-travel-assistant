@@ -1,4 +1,5 @@
 import asyncio
+import os
 from agent.graph import graph
 from agent.models import TripPlanRequest
 
@@ -15,7 +16,6 @@ async def main():
         accommodation="高档酒店"
     )
 
-    # 2. 构造初始状态
     initial_state = {
         "request": user_request,
         "attractions": [],
@@ -25,22 +25,35 @@ async def main():
         "errors": []
     }
 
-    print("=== 开始运行智能旅行助手 (Mock模式) ===")
+    print("=== 开始运行智能旅行助手 (Real Data) ===")
     
     # 3. 运行 Graph
-    # 注意：我们使用 ainvoke 因为节点是异步的
     result = await graph.ainvoke(initial_state)
 
-    # 4. 打印结果
+    # 4. 调试输出：检查中间数据
+    print(f"\n[Debug] 搜寻到的景点数量: {len(result.get('attractions', []))}")
+    print(f"[Debug] 搜寻到的酒店数量: {len(result.get('hotels', []))}")
+    print(f"[Debug] 获取到的天气天数: {len(result.get('weather', []))}")
+    
+    if result.get("errors"):
+        print(f"[Debug] 运行中出现的错误: {result['errors']}")
+
+    # 5. 打印最终结果
     print("\n=== 运行完成 ===")
     plan = result.get("final_plan")
     if plan:
         print(f"目的地: {plan.city}")
         print(f"总体建议: {plan.overall_suggestions}")
-        print(f"第一天行程: {plan.days[0].description}")
-        print(f"预估总预算: {plan.budget.total} 元")
+        print(f"第一天描述: {plan.days[0].description}")
+        print("-" * 20)
+        for day in plan.days:
+            print(f"第 {day.day_index + 1} 天 ({day.date}):")
+            for attr in day.attractions:
+                print(f"  - 景点: {attr.name}")
+        print("-" * 20)
+        print(f"预估总预算: {plan.budget.total if plan.budget else '未知'} 元")
     else:
-        print("未生成计划。")
+        print("未生成计划。请检查上面的调试信息。")
 
 if __name__ == "__main__":
     asyncio.run(main())
