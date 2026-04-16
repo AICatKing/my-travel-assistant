@@ -2,6 +2,9 @@ import os
 import requests
 from typing import List, Dict, Any, Optional
 from agent.models import Attraction, Hotel, WeatherInfo, Location
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # 修正：不要在模块级别直接赋值，否则导入时如果环境变量未加载会拿到 None
 def get_amap_key():
@@ -25,6 +28,12 @@ def get_adcode(city_name: str) -> str:
     return city_name
 
 def search_amap_poi(keywords: str, city: str, types: str = "") -> List[Dict[str, Any]]:
+    key = get_amap_key()
+    print(f"--- [Tool Debug] 关键词: {keywords}, 城市: {city}, Key 存在: {bool(key)} ---")
+    if not key:
+        print("--- [Error] AMAP_API_KEY 为空，请检查环境变量配置 ---")
+        return []
+    
     formatted_keywords = keywords.replace("，", "|").replace(",", "|")
     url = "https://restapi.amap.com/v3/place/text"
     params = {
