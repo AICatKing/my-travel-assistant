@@ -109,20 +109,35 @@ const submitRequest = async () => {
             <h3 class="text-xl font-bold text-slate-800 mb-2">第 {{ day.day_index + 1 }} 天: {{ day.date }}</h3>
             <p class="text-slate-600 mb-4">{{ day.description }}</p>
             
-            <div class="space-y-3">
-              <div v-for="attraction in day.attractions" :key="attraction.name" class="flex items-start gap-3 p-3 bg-slate-50 rounded-lg">
-                <div class="bg-orange-500 text-white p-1 rounded text-xs mt-1">景点</div>
-                <div>
-                  <h4 class="font-bold">{{ attraction.name }}</h4>
-                  <p class="text-sm text-slate-500">{{ attraction.address }}</p>
+            <div class="space-y-4">
+              <div v-for="attraction in day.attractions" :key="attraction.name" class="flex flex-col md:flex-row gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100 overflow-hidden">
+                <div v-if="attraction.image_url" class="w-full md:w-48 h-32 flex-shrink-0">
+                  <img :src="attraction.image_url" :alt="attraction.name" class="w-full h-full object-cover rounded-lg shadow-sm" />
+                </div>
+                <div v-else class="w-full md:w-48 h-32 flex-shrink-0 bg-slate-200 rounded-lg flex items-center justify-center text-slate-400">
+                   <span class="text-xs">无图片</span>
+                </div>
+                <div class="flex-1">
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="bg-orange-500 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase">景点</span>
+                    <h4 class="font-bold text-lg">{{ attraction.name }}</h4>
+                  </div>
+                  <p class="text-sm text-slate-500 mb-2">{{ attraction.address }}</p>
+                  <p class="text-sm text-slate-600 line-clamp-2 italic">{{ attraction.description }}</p>
                 </div>
               </div>
 
-              <div v-if="day.hotel" class="flex items-start gap-3 p-3 bg-indigo-50 rounded-lg border border-indigo-100">
-                <div class="bg-indigo-600 text-white p-1 rounded text-xs mt-1">住宿</div>
-                <div>
-                  <h4 class="font-bold">{{ day.hotel.name }}</h4>
+              <div v-if="day.hotel" class="flex flex-col md:flex-row gap-4 p-4 bg-indigo-50 rounded-xl border border-indigo-100 overflow-hidden">
+                <div v-if="day.hotel.image_url" class="w-full md:w-48 h-32 flex-shrink-0">
+                  <img :src="day.hotel.image_url" :alt="day.hotel.name" class="w-full h-full object-cover rounded-lg shadow-sm" />
+                </div>
+                <div class="flex-1">
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="bg-indigo-600 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase">住宿</span>
+                    <h4 class="font-bold text-lg">{{ day.hotel.name }}</h4>
+                  </div>
                   <p class="text-sm text-slate-500">{{ day.hotel.address }}</p>
+                  <p class="text-sm text-indigo-700 mt-2 font-medium">评分: {{ day.hotel.rating }} | 预估: ¥{{ day.hotel.estimated_cost }}/晚</p>
                 </div>
               </div>
             </div>

@@ -10,6 +10,9 @@ load_dotenv()
 def get_amap_key():
     return os.getenv("AMAP_API_KEY")
 
+def get_unsplash_key():
+    return os.getenv("UNSPLASH_ACCESS_KEY")
+
 CITY_ADCODE = {
     "北京": "110000",
     "上海": "310000",
@@ -26,6 +29,34 @@ def get_adcode(city_name: str) -> str:
         if name in city_name:
             return code
     return city_name
+
+def search_unsplash_image(query: str) -> str:
+    """
+    根据关键词搜索 Unsplash 高清图片 URL。
+    """
+    key = get_unsplash_key()
+    if not key:
+        return ""
+    
+    url = "https://api.unsplash.com/search/photos"
+    params = {
+        "client_id": key,
+        "query": query,
+        "per_page": 1,
+        "orientation": "landscape"
+    }
+    try:
+        response = requests.get(url, params=params, timeout=5)
+        if response.status_code != 200:
+            print(f"Unsplash API 错误: {response.status_code}")
+            return ""
+        data = response.json()
+        if data.get("results") and len(data["results"]) > 0:
+            return data["results"][0]["urls"]["regular"]
+        return ""
+    except Exception as e:
+        print(f"Unsplash 搜索失败: {e}")
+        return ""
 
 def search_amap_poi(keywords: str, city: str, types: str = "") -> List[Dict[str, Any]]:
     key = get_amap_key()

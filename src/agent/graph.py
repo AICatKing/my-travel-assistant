@@ -32,7 +32,8 @@ from agent.tools import (
     search_amap_poi,
     get_amap_weather,
     parse_poi_to_attraction,
-    parse_poi_to_hotel
+    parse_poi_to_hotel,
+    search_unsplash_image
 )
 
 load_dotenv()
@@ -82,6 +83,16 @@ async def search_attractions_node(state: AgentState, runtime: Runtime[Context]) 
     print(f">>>> [Debug] 高德返回 POI 数量: {len(pois)}")
     
     attractions = [parse_poi_to_attraction(p) for p in pois]
+
+    # 3. 并行获取图片 (UA-B4 优化)
+    async def fetch_img(attr: Attraction):
+        img_url = await asyncio.to_thread(search_unsplash_image, f"{city} {attr.name}")
+        attr.image_url = img_url
+
+    if attractions:
+        print(f">>>> [Debug] 正在并行获取 {len(attractions)} 个景点的图片...")
+        await asyncio.gather(*(fetch_img(a) for a in attractions))
+
     return {"attractions": attractions}
 
 
@@ -95,6 +106,16 @@ async def search_hotels_node(state: AgentState, runtime: Runtime[Context]) -> Di
     print(f">>>> [Debug] 高德返回酒店数量: {len(pois)}")
     
     hotels = [parse_poi_to_hotel(p) for p in pois]
+
+    # 3. 并行获取图片
+    async def fetch_hotel_img(h: Hotel):
+        img_url = await asyncio.to_thread(search_unsplash_image, f"{city} {h.name}")
+        h.image_url = img_url
+
+    if hotels:
+        print(f">>>> [Debug] 正在并行获取 {len(hotels)} 个酒店的图片...")
+        await asyncio.gather(*(fetch_hotel_img(h) for h in hotels))
+
     return {"hotels": hotels}
 
 

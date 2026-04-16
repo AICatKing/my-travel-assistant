@@ -52,6 +52,7 @@ class Hotel(BaseModel):
     distance: str = Field(default="", description="距离景点距离")
     type: str = Field(default="", description="酒店类型")
     estimated_cost: int = Field(default=0, description="预估费用(元/晚)")
+    image_url: Optional[str] = Field(default=None, description="酒店图片URL")
 
 
 class Budget(BaseModel):
