@@ -1,5 +1,6 @@
 import sys
 import os
+from pathlib import Path
 
 # 强制将 src 目录加入系统路径，确保导入 agent 不会出错
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -11,9 +12,10 @@ print(f">>>> [System] Python Path: {sys.path}")
 print(f">>>> [System] Working Directory: {os.getcwd()}")
 
 try:
-    from fastapi import FastAPI, HTTPException
+    from fastapi import FastAPI
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import StreamingResponse
+    from fastapi.staticfiles import StaticFiles
     import time
     import json
     import asyncio
@@ -52,7 +54,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/")
+@app.get("/health")
 async def health_check():
     return {"status": "online", "timestamp": int(time.time())}
 
@@ -109,6 +111,15 @@ async def create_trip_plan_stream(request: TripPlanRequest):
             "X-Accel-Buffering": "no"
         }
     )
+
+frontend_dist_dir = Path(__file__).resolve().parents[2] / "web" / "dist"
+
+if frontend_dist_dir.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_dist_dir), html=True), name="frontend")
+else:
+    @app.get("/")
+    async def root_fallback():
+        return {"status": "online", "timestamp": int(time.time())}
 
 if __name__ == "__main__":
     import uvicorn
