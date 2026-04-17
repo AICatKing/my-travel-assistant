@@ -38,6 +38,19 @@ app = FastAPI(
     version="0.1.0"
 )
 
+
+def log_env_presence() -> None:
+    tracked_env_vars = [
+        "AMAP_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "LANGSMITH_API_KEY",
+        "UNSPLASH_ACCESS_KEY",
+    ]
+    print(">>>> [System] 环境变量存在性检查开始")
+    for env_name in tracked_env_vars:
+        print(f">>>> [System] {env_name} configured: {bool(os.getenv(env_name))}")
+    print(">>>> [System] 环境变量存在性检查结束")
+
 # 状态映射表
 NODE_STATUS_MAP = {
     "search_attractions": "🗺️ 正在搜寻目的地热门景点并抓取精美图片...",
@@ -120,6 +133,11 @@ else:
     @app.get("/")
     async def root_fallback():
         return {"status": "online", "timestamp": int(time.time())}
+
+
+@app.on_event("startup")
+async def startup_event() -> None:
+    log_env_presence()
 
 if __name__ == "__main__":
     import uvicorn
